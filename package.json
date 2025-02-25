@@ -1,0 +1,33 @@
+{
+  "name": "vscode-extension-scraper",
+  "version": "1.0.0",
+  "description": "VSCode Marketplace Extension Scraper",
+  "main": "src/cli.js",
+  "bin": {
+    "vscode-scraper": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "preinstall": "npm install -g puppeteer sequelize sqlite3 dotenv",
+    "postinstall": "node scripts/setup.js"
+  },
+  "keywords": [
+    "vscode",
+    "extensions",
+    "scraper",
+    "marketplace"
+  ],
+  "author": "Dilbek Mukhatovich",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "puppeteer": "^21.5.2",
+    "sequelize": "^6.35.1",
+    "sqlite3": "^5.1.6"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "preferGlobal": true
+}
