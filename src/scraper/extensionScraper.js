@@ -20,117 +20,135 @@ class ExtensionScraper {
     try {
       const page = await this.browser.newPage();
       
-      await page.setDefaultNavigationTimeout(60000);
-      await page.setDefaultTimeout(30000);
+      await page.setDefaultNavigationTimeout(120000); // 60000 dan 120000 ga oshiramiz
+      await page.setDefaultTimeout(60000); // 30000 dan 60000 ga oshiramiz
       
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       
-      console.log('VSCode Marketplace sahifasiga o\'tilmoqda...');
-      await page.goto('https://marketplace.visualstudio.com/search?target=VSCode&category=All%20categories&sortBy=Installs', {
-        waitUntil: 'networkidle0'
-      });
+      // Turli xil saralash usullari bilan qidirish
+      const sortOptions = [
+        'Installs', // Eng ko'p o'rnatilgan
+        'Rating', // Eng yuqori baholangan
+        'PublisherCount', // Eng ko'p nashriyotchilar
+        'UpdatedDate', // Eng so'nggi yangilangan
+        'ReleaseDate', // Eng so'nggi chiqarilgan
+        'Name' // Alifbo tartibida
+      ];
       
-      console.log('Sahifa elementlari yuklanishini kutish...');
-      await page.waitForSelector('.item-list-container', { timeout: 80000 });
-
-      // Keep track of processed URLs to avoid duplicates
       const processedUrls = new Set();
       let totalProcessed = 0;
-      let scrollCount = 0;
-      const maxScrolls = 20; // Maximum number of scrolls to perform
-      let consecutiveEmptyScrolls = 0;
       
-      // Function to extract URLs from the current page view
-      const extractUrls = async () => {
-        return await page.evaluate(() => {
-          // Try multiple selectors to find all possible extensions
-          const selectors = [
-            '.item-grid-container .row-item a',
-            '.item-list-container .row-item a',
-            '.gallery-item-card-container a',
-            '.ux-item-card a',
-            '.item-grid-container a[href*="/items"]',
-            '.item-list-container a[href*="/items"]'
-          ];
-          
-          const urls = new Set();
-          
-          // Try each selector and collect unique URLs
-          for (const selector of selectors) {
-            const elements = document.querySelectorAll(selector);
-            for (const element of elements) {
-              if (element.href && element.href.includes('/items?itemName=')) {
-                urls.add(element.href);
+      // Har bir saralash usuli bilan qidirish
+      for (const sortOption of sortOptions) {
+        console.log(`\n=== ${sortOption} bo'yicha qidirilmoqda ===\n`);
+        
+        const url = `https://marketplace.visualstudio.com/search?target=VSCode&category=All%20categories&sortBy=${sortOption}`;
+        console.log(`VSCode Marketplace sahifasiga o'tilmoqda: ${url}`);
+        
+        await page.goto(url, {
+          waitUntil: 'networkidle0'
+        });
+        
+        console.log('Sahifa elementlari yuklanishini kutish...');
+        await page.waitForSelector('.item-list-container', { timeout: 80000 });
+        
+        let scrollCount = 0;
+        const maxScrolls = 200; // 100 dan 200 ga oshiramiz
+        let consecutiveEmptyScrolls = 0;
+        
+        // Function to extract URLs from the current page view
+        const extractUrls = async () => {
+          return await page.evaluate(() => {
+            // Try multiple selectors to find all possible extensions
+            const selectors = [
+              '.item-grid-container .row-item a',
+              '.item-list-container .row-item a',
+              '.gallery-item-card-container a',
+              '.ux-item-card a',
+              '.item-grid-container a[href*="/items"]',
+              '.item-list-container a[href*="/items"]'
+            ];
+            
+            const urls = new Set();
+            
+            // Try each selector and collect unique URLs
+            for (const selector of selectors) {
+              const elements = document.querySelectorAll(selector);
+              for (const element of elements) {
+                if (element.href && element.href.includes('/items?itemName=')) {
+                  urls.add(element.href);
+                }
               }
             }
-          }
-          
-          return Array.from(urls);
-        });
-      };
-      
-      // Initial extraction before scrolling
-      let newUrls = await extractUrls();
-      console.log(`Dastlabki URLlar soni: ${newUrls.length}`);
-      
-      // Process initial batch of URLs
-      for (const url of newUrls) {
-        if (!processedUrls.has(url)) {
-          processedUrls.add(url);
-          console.log(`Murojaat qilinmoqda: ${url}`);
-          await this.saveExtensionContent(url, savePath);
-          totalProcessed++;
-        }
-      }
-      
-      // Continue scrolling and processing until termination conditions are met
-      while (scrollCount < maxScrolls && consecutiveEmptyScrolls < 3) {
-        scrollCount++;
-        console.log(`Sahifani pastga siljitish... (${scrollCount}/${maxScrolls})`);
+            
+            return Array.from(urls);
+          });
+        };
         
-        // Scroll down once
-        await page.evaluate(() => {
-          window.scrollBy(0, window.innerHeight * 3); // Scroll a bit more to ensure new content loads
-        });
+        // Initial extraction before scrolling
+        let newUrls = await extractUrls();
+        console.log(`Dastlabki URLlar soni: ${newUrls.length}`);
         
-        // Wait for new content to load
-        await page.evaluate(() => {
-          return new Promise(resolve => setTimeout(resolve, 3000));
-        }); // Replace waitForTimeout with setTimeout in evaluate
-        
-        // Extract new URLs after scrolling
-        newUrls = await extractUrls();
-        
-        // Filter out already processed URLs
-        const unprocessedUrls = newUrls.filter(url => !processedUrls.has(url));
-        console.log(`Yangi topilgan URLlar: ${unprocessedUrls.length}`);
-        
-        // If no new URLs found, increment empty scroll counter
-        if (unprocessedUrls.length === 0) {
-          consecutiveEmptyScrolls++;
-          console.log(`Yangi URL topilmadi (${consecutiveEmptyScrolls}/3), davom etilmoqda...`);
-        } else {
-          // Reset empty scroll counter if new URLs found
-          consecutiveEmptyScrolls = 0;
-          
-          // Process all new URLs before scrolling again
-          for (const url of unprocessedUrls) {
+        // Process initial batch of URLs
+        for (const url of newUrls) {
+          if (!processedUrls.has(url)) {
             processedUrls.add(url);
             console.log(`Murojaat qilinmoqda: ${url}`);
             await this.saveExtensionContent(url, savePath);
             totalProcessed++;
           }
+        }
+        
+        // Continue scrolling and processing until termination conditions are met
+        while (scrollCount < maxScrolls && consecutiveEmptyScrolls < 8) { // 5 dan 8 ga oshiramiz
+          scrollCount++;
+          console.log(`Sahifani pastga siljitish... (${scrollCount}/${maxScrolls})`);
           
-          console.log(`Jami qayta ishlangan URLlar: ${totalProcessed}`);
+          // Scroll down once
+          await page.evaluate(() => {
+            window.scrollBy(0, window.innerHeight * 5);
+          });
+          
+          // Wait for new content to load
+          await page.evaluate(() => {
+            return new Promise(resolve => setTimeout(resolve, 5000));
+          });
+          
+          // Extract new URLs after scrolling
+          newUrls = await extractUrls();
+          
+          // Filter out already processed URLs
+          const unprocessedUrls = newUrls.filter(url => !processedUrls.has(url));
+          console.log(`Yangi topilgan URLlar: ${unprocessedUrls.length}`);
+          
+          // If no new URLs found, increment empty scroll counter
+          if (unprocessedUrls.length === 0) {
+            consecutiveEmptyScrolls++;
+            console.log(`Yangi URL topilmadi (${consecutiveEmptyScrolls}/8), davom etilmoqda...`);
+          } else {
+            // Reset empty scroll counter if new URLs found
+            consecutiveEmptyScrolls = 0;
+            
+            // Process all new URLs before scrolling again
+            for (const url of unprocessedUrls) {
+              processedUrls.add(url);
+              console.log(`Murojaat qilinmoqda: ${url}`);
+              await this.saveExtensionContent(url, savePath);
+              totalProcessed++;
+            }
+            
+            console.log(`Jami qayta ishlangan URLlar: ${totalProcessed}`);
+          }
+        }
+        
+        if (consecutiveEmptyScrolls >= 8) {
+          console.log(`Ketma-ket 8 marta yangi URL topilmadi, keyingi saralash usuliga o'tilmoqda...`);
+        } else if (scrollCount >= maxScrolls) {
+          console.log(`Maksimal scroll miqdoriga yetildi, keyingi saralash usuliga o'tilmoqda...`);
         }
       }
       
-      if (consecutiveEmptyScrolls >= 3) {
-        console.log('Ketma-ket 3 marta yangi URL topilmadi, to\'xtatilmoqda...');
-      } else if (scrollCount >= maxScrolls) {
-        console.log('Maksimal scroll miqdoriga yetildi, to\'xtatilmoqda...');
-      }
-      
+      console.log(`\n=== YAKUNIY NATIJA ===`);
       console.log(`Jami topilgan va qayta ishlangan URLlar: ${totalProcessed}`);
       return totalProcessed;
     } catch (error) {
@@ -166,7 +184,7 @@ class ExtensionScraper {
       await page.goto(url, { waitUntil: 'networkidle0' });
       
       // Extract all necessary data from the page based on the specified selectors
-      const extensionData = await page.evaluate(() => {
+      const extensionData = await page.evaluate((pageUrl) => {
         // Function to safely extract text from a selector
         const getText = (selector) => {
           const element = document.querySelector(selector);
@@ -196,20 +214,20 @@ class ExtensionScraper {
           name: getText('h1[itemprop="name"]') || getText('.ux-item-name'),
           identifier: getIdentifier(),
           description: getText('.ux-item-shortdesc') || getText('.ux-item-description'),
-          version: getText('.ux-item-meta-version') || getText('.ux-item-version'),
-          author: getText('.ux-item-publisher'),
-          url: window.location.href,
+          version: getText('.ux-item-meta-version') || getText('#version + td'),
+          author: getText('.ux-item-publisher') || getText('#publisher + td'),
+          url: pageUrl,
           downloads: getNumber('.ux-item-meta-installs') || getNumber('.installs'),
-          installs: getNumber('.ux-item-meta-installs') || getNumber('.installs'),
-          last_updated: getText('.ux-item-meta-lastupdate') || getText('.ux-item-updated'),
-          categories: getArray('.ux-category-pill'),
-          rating: parseFloat(getText('.ux-rating-count') || getText('.rating')) || 0,
-          review_count: getNumber('.ux-review-count'),
-          tags: getArray('.ux-tag-list'),
+          installs: getNumber('.installs-text') || getNumber('.installs'),
+          last_updated: getText('.extension-last-updated-date') || getText('#last-updated + td'),
+          categories: getArray('.meta-data-list-link'),
+          rating: parseFloat(getText('.ux-item-rating-count') || getText('.rating')) || 0,
+          reviewCount: $(".ux-item-rating-count span").first().text().trim(),
+          tags: getArray('.meta-data-list'),
           repository: getText('.ux-repository'),
-          license: getText('.ux-license-type')
+          licenseUrl : $('.ux-section-resources a').filter((_, el) => $(el).text().trim() === "License").attr("href")
         };
-      });
+      }, url);
       
       const htmlContent = await page.evaluate(() => document.documentElement.outerHTML);
       await page.close();
@@ -220,6 +238,22 @@ class ExtensionScraper {
         .replace(/\//g, ' ')  // Replace forward slashes with spaces
         .replace(/[\\:*?"<>|]/g, '_');  // Replace other problematic characters with underscores
       const folderPath = path.join(savePath, folderName);
+      
+      // Check if folder already exists
+      try {
+        const stats = await fs.stat(folderPath);
+        if (stats.isDirectory()) {
+          console.log(`⚠️ Folder mavjud: ${folderPath}, faqat bazaga saqlanadi`);
+          // Save to SQLite without creating folder
+          await this.saveToDatabase(extensionData, folderPath);
+          return;
+        }
+      } catch (err) {
+        // Folder doesn't exist, continue with creation
+        if (err.code !== 'ENOENT') {
+          throw err; // Re-throw if it's not a "not found" error
+        }
+      }
       
       // Save to file system
       await fs.mkdir(folderPath, { recursive: true });
