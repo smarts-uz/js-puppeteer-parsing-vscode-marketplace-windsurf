@@ -94,7 +94,9 @@ class ExtensionScraper {
           if (!processedUrls.has(url)) {
             processedUrls.add(url);
             console.log(`Murojaat qilinmoqda: ${url}`);
-            await this.saveExtensionContent(url, savePath);
+            // Save only to database
+            const extensionData = await this.fetchExtensionData(url);
+            await this.saveToDatabase(extensionData, savePath);
             totalProcessed++;
           }
         }
@@ -133,7 +135,9 @@ class ExtensionScraper {
             for (const url of unprocessedUrls) {
               processedUrls.add(url);
               console.log(`Murojaat qilinmoqda: ${url}`);
-              await this.saveExtensionContent(url, savePath);
+              // Save only to database
+              const extensionData = await this.fetchExtensionData(url);
+              await this.saveToDatabase(extensionData, savePath);
               totalProcessed++;
             }
             
@@ -157,29 +161,24 @@ class ExtensionScraper {
     }
   }
 
-  async saveExtensionContent(url, savePath) {
+  async savePagesToFile() {
     try {
-      // Extract identifier from URL
-      const urlMatch = url.match(/itemName=([^&]+)/);
-      const identifier = urlMatch ? urlMatch[1] : null;
-      
-      if (!identifier) {
-        console.error(`❌ URL dan identifier ajratib olinmadi: ${url}`);
-        return;
-      }
-      
-      // Check if extension already exists in database
       const Extension = require('../database/models/Extension');
-      const existingExtension = await Extension.findOne({
-        where: { identifier: identifier }
-      });
-      
-      if (existingExtension) {
-        console.log(`⚠️ Extension bazada mavjud: ${existingExtension.name} (${identifier})`);
-        return; // Skip processing if already exists
+      const extensions = await Extension.findAll();
+      for (const extension of extensions) {
+        const url = extension.url;
+        const pageContent = await this.fetchPageContent(url);
+        const filePath = path.join('your_file_path_here', `${extension.name}.html`);
+        await fs.writeFile(filePath, pageContent);
+        console.log(`Saved page content for ${extension.name} to file.`);
       }
-      
-      // Continue with scraping if extension doesn't exist
+    } catch (error) {
+      console.error('Error saving pages to file:', error);
+    }
+  }
+
+  async fetchExtensionData(url) {
+    try {
       const page = await this.browser.newPage();
       await page.goto(url, { waitUntil: 'networkidle0' });
       
@@ -229,48 +228,24 @@ class ExtensionScraper {
         };
       }, url);
       
-      const htmlContent = await page.evaluate(() => document.documentElement.outerHTML);
       await page.close();
-      
-      // Create folder name based on extension name with regex sanitization
-      // Replace forward slashes with spaces and other problematic characters with underscores
-      const folderName = extensionData.name
-        .replace(/\//g, ' ')  // Replace forward slashes with spaces
-        .replace(/[\\:*?"<>|]/g, '_');  // Replace other problematic characters with underscores
-      const folderPath = path.join(savePath, folderName);
-      
-      // Check if folder already exists
-      try {
-        const stats = await fs.stat(folderPath);
-        if (stats.isDirectory()) {
-          console.log(`⚠️ Folder mavjud: ${folderPath}, faqat bazaga saqlanadi`);
-          // Save to SQLite without creating folder
-          await this.saveToDatabase(extensionData, folderPath);
-          return;
-        }
-      } catch (err) {
-        // Folder doesn't exist, continue with creation
-        if (err.code !== 'ENOENT') {
-          throw err; // Re-throw if it's not a "not found" error
-        }
-      }
-      
-      // Save to file system
-      await fs.mkdir(folderPath, { recursive: true });
-      await fs.writeFile(path.join(folderPath, 'content.html'), htmlContent);
-      
-      // Create a Windows-compatible .url shortcut file
-      const urlFilePath = path.join(folderPath, `${folderName}.url`);
-      await fs.writeFile(urlFilePath, `[InternetShortcut]\nURL=${url}\n`, 'utf8');
-      
-      console.log(`✅ Saqlandi: ${extensionData.name} (${url})`);
-      console.log(`🔗 URL fayl saqlandi: ${urlFilePath}`);
-      
-      // Save to SQLite
-      await this.saveToDatabase(extensionData, folderPath);
-      
+      return extensionData;
     } catch (error) {
       console.error(`❌ Fayllarni saqlashda xatolik: ${url}`, error);
+      return null;
+    }
+  }
+
+  async fetchPageContent(url) {
+    try {
+      const page = await this.browser.newPage();
+      await page.goto(url, { waitUntil: 'networkidle0' });
+      const htmlContent = await page.evaluate(() => document.documentElement.outerHTML);
+      await page.close();
+      return htmlContent;
+    } catch (error) {
+      console.error(`❌ Fayllarni saqlashda xatolik: ${url}`, error);
+      return null;
     }
   }
 
